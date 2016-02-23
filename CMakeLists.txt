@@ -100,3 +100,16 @@ target_link_libraries( server ${OPENSSL_LIBRARIES} )
 target_link_libraries( server ${PROTOBUF_LIBRARIES} )
 target_link_libraries( server ${Communique_LIBRARIES} )
 
+#
+# If requested, build the executable with all the tests and
+# unit tests.
+#
+option( BUILD_UNITTESTS "Build unit tests" ON )
+message( STATUS "BUILD_UNITTESTS: ${BUILD_UNITTESTS}" )
+if( BUILD_UNITTESTS )
+	include_directories( "${CMAKE_SOURCE_DIR}/test" )
+	aux_source_directory( "test" unittests_sources )
+	aux_source_directory( "test/tools" unittests_sources )
+	aux_source_directory( "src/tools" unittests_sources )
+	add_executable( ${PROJECT_NAME}Tests ${unittests_sources} )
+endif()
