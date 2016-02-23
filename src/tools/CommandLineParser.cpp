@@ -20,6 +20,8 @@ namespace
 		{
 			switch( static_cast<tools::CommandLineParser::error>(code) )
 			{
+			case tools::CommandLineParser::error::ok :
+				return "success";
 			case tools::CommandLineParser::error::parse_error :
 				return "getopt_long returned an unknown code";
 			case tools::CommandLineParser::error::unknown_option :
