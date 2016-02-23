@@ -48,7 +48,8 @@ find_library( emscripten_libprotobuf NAMES protobuf PATHS ${EMSCRIPTEN_PROTOBUF_
 add_definitions( "-std=c++11" )
 
 include_directories( "${CMAKE_SOURCE_DIR}/include" )
-aux_source_directory( "${CMAKE_SOURCE_DIR}/src" source_files )
+aux_source_directory( "${CMAKE_SOURCE_DIR}/src/tools" source_files )
+aux_source_directory( "${CMAKE_SOURCE_DIR}/src/server" source_files )
 
 # Add specific subset of the source files to the client code
 list( APPEND client_source_files "${CMAKE_SOURCE_DIR}/src/emscripten/example.cpp" )
@@ -80,12 +81,10 @@ add_custom_command( OUTPUT ${client_destination_file} "${client_destination_file
 #set( CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/" )
 find_package( OpenSSL REQUIRED )
 find_package( Protobuf REQUIRED )
-find_package( Boost REQUIRED COMPONENTS system )
 find_package( Communique REQUIRED )
 
 include_directories( "${OPENSSL_INCLUDE_DIR}" )
 include_directories( "${PROTOBUF_INCLUDE_DIR}" )
-include_directories( "${Boost_INCLUDE_DIR}" )
 include_directories( "${Communique_INCLUDE_DIRS}" )
 
 # Copy the Communique javascript file into the client code directory
@@ -94,11 +93,10 @@ add_custom_command( OUTPUT ${client_code_dir}/Communique.js
 	DEPENDS "${Communique_INCLUDE_DIRS}/Communique.js" )
 list( APPEND CLIENT_STATIC_OUTPUT "${client_code_dir}/Communique.js" )
 
-add_executable( ${PROJECT_NAME} ${source_files} )
-add_custom_target( "${PROJECT_NAME}ClientCode" ALL DEPENDS ${CLIENT_STATIC_OUTPUT} ${client_destination_file} )
+add_executable( server ${source_files} )
+#add_custom_target( "${PROJECT_NAME}ClientCode" ALL DEPENDS ${CLIENT_STATIC_OUTPUT} ${client_destination_file} )
 
-target_link_libraries( ${PROJECT_NAME} ${OPENSSL_LIBRARIES} )
-target_link_libraries( ${PROJECT_NAME} ${PROTOBUF_LIBRARIES} )
-target_link_libraries( ${PROJECT_NAME} ${Boost_LIBRARIES} )
-target_link_libraries( ${PROJECT_NAME} ${Communique_LIBRARIES} )
+target_link_libraries( server ${OPENSSL_LIBRARIES} )
+target_link_libraries( server ${PROTOBUF_LIBRARIES} )
+target_link_libraries( server ${Communique_LIBRARIES} )
 
