@@ -3,6 +3,57 @@
 #include <stdexcept>
 #include <getopt.h>
 
+//
+// Use the unnamed namespace for things only used in this file
+//
+namespace
+{
+	/** @brief error_category class for all errors the CommandLineParser class can generate
+	 * @author Mark Grimes
+	 * @date 23/Feb/2016
+	 */
+	class CommandLineParser_error_category : public std::error_category
+	{
+	public:
+		virtual const char* name() const noexcept { return "CommandLineParser::error"; }
+		virtual std::string message( int code ) const
+		{
+			switch( static_cast<tools::CommandLineParser::error>(code) )
+			{
+			case tools::CommandLineParser::error::parse_error :
+				return "getopt_long returned an unknown code";
+			case tools::CommandLineParser::error::unknown_option :
+				return "Unknown option(s)";
+			default :
+				return "Unknown error code";
+			}
+		}
+	};
+
+	/** @brief Returns the only instance of CommandLineParser_error_category
+	 *
+	 * C++11 guarantees that static local variables are thread safe.
+	 *
+	 * @author Mark Grimes
+	 * @date 23/Feb/2016
+	 */
+	const std::error_category& error_category()
+	{
+		static CommandLineParser_error_category category;
+		return category;
+	}
+} // end of the unnamed namespace
+
+std::error_code tools::make_error_code( tools::CommandLineParser::error e )
+{
+	return std::error_code( static_cast<int>(e), ::error_category() );
+}
+
+std::error_condition tools::make_error_condition( tools::CommandLineParser::error e )
+{
+	return std::error_condition( static_cast<int>(e), ::error_category() );
+}
+
 
 void tools::CommandLineParser::addOption( const std::string& name, ArgumentType argumentType )
 {
@@ -11,11 +62,29 @@ void tools::CommandLineParser::addOption( const std::string& name, ArgumentType 
 
 void tools::CommandLineParser::parse( const int argc, char* argv[] )
 {
+	std::error_code error;
+	parse( argc, argv, error );
+	if( error )
+	{
+		if( error==CommandLineParser::error::unknown_option )
+		{
+			// Extend the description to include the options that weren't recognised
+			std::string message;//="Unknown option(s): ";
+			for( const auto& option : unknownOptions_ ) message+=option+", ";
+			throw std::system_error( error, message );
+		}
+		else throw std::system_error( error );
+	}
+}
+
+void tools::CommandLineParser::parse( const int argc, char* argv[], std::error_code& error )
+{
 	// Don't know why this method would be called more than once, but I might as well
 	// make sure I'm starting with a clean slate.
 	executableName_.clear();
 	parsedOptions_.clear();
 	nonOptionArguments_.clear();
+	unknownOptions_.clear();
 
 	// Make a copy of argv, because getopt reorders it. I want to make sure calling
 	// this function multiple times always has the same result. Pretty sure it just
@@ -53,12 +122,10 @@ void tools::CommandLineParser::parse( const int argc, char* argv[] )
 
 	int getoptReturn;
 
-	// Record all unregistered options encountered, then throw exception *at the end*.
+	// Record all unregistered options encountered, then create the error *at the end*.
 	// This is so that nonOptionArguments_ has the chance to be set, because this could
 	// be called from ModuleCommandLineParser which doesn't care about unregistered options
 	// after the command name.
-	std::vector<std::string> unknownOptions;
-
 	do
 	{
 		int optionIndex;
@@ -73,8 +140,8 @@ void tools::CommandLineParser::parse( const int argc, char* argv[] )
 			std::vector<std::string>& optionArguments=parsedOptions_[longOptions[optionIndex].name];
 			if( optarg ) optionArguments.push_back( optarg );
 		}
-		else if( getoptReturn=='?' ) unknownOptions.push_back(argv[currentInd]);
-		else if( getoptReturn!=-1 )  throw std::runtime_error("getopt_long returned an unknown code");
+		else if( getoptReturn=='?' ) unknownOptions_.push_back(argv[currentInd]);
+		else if( getoptReturn!=-1 ) { error=CommandLineParser::error::parse_error; return; }
 
 	} while( getoptReturn!=-1 );
 
@@ -83,12 +150,8 @@ void tools::CommandLineParser::parse( const int argc, char* argv[] )
 	while( optind<argc ) nonOptionArguments_.push_back( argv[optind++] );
 
 	// If options were specified that weren't registered, throw an exception.
-	if( !unknownOptions.empty() )
-	{
-		std::string message="Unknown option(s): ";
-		for( const auto& option : unknownOptions ) message+=option+", ";
-		throw std::runtime_error(message);
-	}
+	if( !unknownOptions_.empty() ) error=CommandLineParser::error::unknown_option;
+	else error=CommandLineParser::error::ok;
 }
 
 bool tools::CommandLineParser::optionHasBeenSet( const std::string& optionName ) const

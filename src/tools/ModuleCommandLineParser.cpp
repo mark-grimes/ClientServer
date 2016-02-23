@@ -15,17 +15,13 @@ void tools::ModuleCommandLineParser::parse( const int argc, char* argv[] )
 	// with command options. The nonOptionArguments will be in order though, and the first
 	// one of these is the command name. Once I have that, I can manually search argv for
 	// its position.
-	try { parser_.parse( argc, argv ); }
-	catch( std::runtime_error& error )
+	std::error_code error;
+	parser_.parse( argc, argv, error );
+	if( error )
 	{
-		// I know this is bad form to catch exceptions and hide them, but I don't
-		// care if any options after the command name are unregistered (which would
-		// normally throw an exception). As long as a command name was specified I'll
-		// take that and let someone else worry about parsing everything after it. If
-		// a command name wasn't specified, rethrow.
-		if( parser_.nonOptionArguments().empty() ) throw;
-		// If there is actually a problem with the arguments the exception will throw
-		// on the next call of parse(...) anyway.
+		// There is the potential for ignorable errors if the parser doesn't
+		// recognise options that are meant for the command.
+		if( error!=tools::CommandLineParser::error::unknown_option ) throw std::system_error(error);
 	}
 
 	if( !parser_.nonOptionArguments().empty() ) // If empty then no command was specified and all options are global
