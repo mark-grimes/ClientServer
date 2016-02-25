@@ -50,6 +50,7 @@ add_definitions( "-std=c++11" )
 include_directories( "${CMAKE_SOURCE_DIR}/include" )
 aux_source_directory( "${CMAKE_SOURCE_DIR}/src/tools" source_files )
 aux_source_directory( "${CMAKE_SOURCE_DIR}/src/server" source_files )
+aux_source_directory( "${CMAKE_SOURCE_DIR}/src/server/commands" source_files )
 
 # Add specific subset of the source files to the client code
 list( APPEND client_source_files "${CMAKE_SOURCE_DIR}/src/emscripten/example.cpp" )
