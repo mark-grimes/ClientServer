@@ -88,13 +88,13 @@ int ListenSubExe::run( int argc, char* argv[] )
 	communique::Server commandServer;
 
 	// As the default example just echo every command sent
-	commandServer.setDefaultRequestHandler( [](const std::string& message,communique::IConnection* pConnection)->std::string
+	commandServer.setDefaultRequestHandler( [](const std::string& message,std::weak_ptr<communique::IConnection> pConnection)->std::string
 		{
 			std::cout << "Got request " << message << std::endl;
 			return message;
 		});
 	// Just print what the message was and quit if necessary
-	commandServer.setDefaultInfoHandler( [&](const std::string& message,communique::IConnection* pConnection)
+	commandServer.setDefaultInfoHandler( [&](const std::string& message,std::weak_ptr<communique::IConnection> pConnection)
 		{
 			std::cout << "Got info " << message << std::endl;
 			if( message=="quit" )
