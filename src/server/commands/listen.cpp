@@ -18,6 +18,9 @@ REGISTER_MODULE( ListenSubExe, "listen" );
 int ListenSubExe::run( int argc, char* argv[] )
 {
 	size_t portNumber=9002;
+	std::string directoryToServe;
+	std::string keyFilename;
+	std::string certificateFilename;
 
 	//
 	// Try and parse the command line arguments
@@ -27,6 +30,10 @@ int ListenSubExe::run( int argc, char* argv[] )
 		tools::CommandLineParser commandLineParser;
 		commandLineParser.addOption( "help", tools::CommandLineParser::NoArgument );
 		commandLineParser.addOption( "port", tools::CommandLineParser::RequiredArgument );
+		commandLineParser.addOption( "httpserve", tools::CommandLineParser::RequiredArgument );
+		commandLineParser.addOption( "httpserve", tools::CommandLineParser::RequiredArgument );
+		commandLineParser.addOption( "cert", tools::CommandLineParser::RequiredArgument );
+		commandLineParser.addOption( "key", tools::CommandLineParser::RequiredArgument );
 
 		commandLineParser.parse( argc, argv );
 
@@ -38,6 +45,9 @@ int ListenSubExe::run( int argc, char* argv[] )
 					  << "Available options:" << "\n"
 					  << "  --help      Display this help message and exit" << "\n"
 					  << "  --port      The port number for the server to listen on. Default is " << portNumber << "." << "\n"
+					  << "  --httpserve A directory name to serve files from if HTTP requests are recieved. If not set no files are served." << "\n"
+					  << "  --cert      An x509 certificate (i.e. TLS certificate) in PEM format for the server to use to identify itself." << "\n"
+					  << "  --key       The key in PEM format for the certificate." << "\n"
 					  << std::endl;
 			return 0;
 		}
@@ -71,6 +81,9 @@ int ListenSubExe::run( int argc, char* argv[] )
 				return -1;
 			}
 		} // end of "port" option check
+		if( commandLineParser.optionHasBeenSet("httpserve") ) directoryToServe=commandLineParser.optionArguments("httpserve").back();
+		if( commandLineParser.optionHasBeenSet("key") ) keyFilename=commandLineParser.optionArguments("key").back();
+		if( commandLineParser.optionHasBeenSet("cert") ) certificateFilename=commandLineParser.optionArguments("cert").back();
 	} // end of parsing arguments try block
 	catch( std::exception& error )
 	{
@@ -86,6 +99,9 @@ int ListenSubExe::run( int argc, char* argv[] )
 	std::condition_variable continueListeningCondition;
 
 	communique::Server commandServer;
+	if( !directoryToServe.empty() ) commandServer.setFileServeRoot( directoryToServe );
+	if( !keyFilename.empty() ) commandServer.setPrivateKeyFile( keyFilename );
+	if( !certificateFilename.empty() ) commandServer.setCertificateChainFile( certificateFilename );
 
 	// As the default example just echo every command sent
 	commandServer.setDefaultRequestHandler( [](const std::string& message,std::weak_ptr<communique::IConnection> pConnection)->std::string
@@ -107,7 +123,9 @@ int ListenSubExe::run( int argc, char* argv[] )
 		});
 
 	// Start listening...
-	std::cout << "Starting to listen on port " << portNumber << std::endl;
+	std::cout << "Starting to listen on port " << portNumber;
+	if( !directoryToServe.empty() ) std::cout << " and serving HTTP request from directory " << directoryToServe;
+	std::cout << std::endl;
 	commandServer.listen(portNumber);
 	// ...and wait until told to stop
 	std::unique_lock<std::mutex> lock(continueListeningMutex);
