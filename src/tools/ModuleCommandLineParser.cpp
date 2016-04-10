@@ -1,7 +1,6 @@
 #include "tools/ModuleCommandLineParser.h"
 
 #include <stdexcept>
-#include <getopt.h>
 
 void tools::ModuleCommandLineParser::addOption( const std::string& name, tools::CommandLineParser::ArgumentType argumentType )
 {

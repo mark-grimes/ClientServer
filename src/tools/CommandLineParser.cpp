@@ -1,7 +1,7 @@
 #include "tools/CommandLineParser.h"
 
 #include <stdexcept>
-#include <getopt.h>
+#include <algorithm>
 
 //
 // Use the unnamed namespace for things only used in this file
@@ -26,6 +26,12 @@ namespace
 				return "getopt_long returned an unknown code";
 			case tools::CommandLineParser::error::unknown_option :
 				return "Unknown option(s)";
+			case tools::CommandLineParser::error::unexepected_option_value :
+				return "An argument was supplied to an option that doesn't accept arguments";
+			case tools::CommandLineParser::error::missing_option_value :
+				return "A required option argument was missing";
+			case tools::CommandLineParser::error::option_as_value :
+				return "An option was provided as an argument to another option (use the \"option=argument\" syntax if you want to pass an argument starting with \"--\")";
 			default :
 				return "Unknown error code";
 			}
@@ -62,97 +68,78 @@ void tools::CommandLineParser::addOption( const std::string& name, ArgumentType 
 	allowedOptions_.push_back( std::make_pair( name, argumentType ) );
 }
 
-void tools::CommandLineParser::parse( const int argc, char* argv[] )
+void tools::CommandLineParser::parse( const int argc, char const* const* argv )
 {
 	std::error_code error;
 	parse( argc, argv, error );
-	if( error )
-	{
-		if( error==CommandLineParser::error::unknown_option )
-		{
-			// Extend the description to include the options that weren't recognised
-			std::string message;//="Unknown option(s): ";
-			for( const auto& option : unknownOptions_ ) message+=option+", ";
-			throw std::system_error( error, message );
-		}
-		else throw std::system_error( error );
-	}
+	if( error ) throw std::system_error( error, "Error with argument '"+parseErrors_.front().second+"'" );
 }
 
-void tools::CommandLineParser::parse( const int argc, char* argv[], std::error_code& error )
+void tools::CommandLineParser::parse( const int argc, char const* const* argv, std::error_code& error )
 {
 	// Don't know why this method would be called more than once, but I might as well
 	// make sure I'm starting with a clean slate.
 	executableName_.clear();
 	parsedOptions_.clear();
 	nonOptionArguments_.clear();
-	unknownOptions_.clear();
-
-	// Make a copy of argv, because getopt reorders it. I want to make sure calling
-	// this function multiple times always has the same result. Pretty sure it just
-	// get reordered so I want copy the strings themselves.
-	std::vector<char*> argvCopy(argc);
-	for( size_t index=0; index<argc; ++index ) argvCopy[index]=argv[index];
-	argv=&argvCopy[0];
-
-	// Suppress the getopt default error because I'll throw an exception if something
-	// goes wrong.
-	opterr=0;
-	optind=1; // reset to make sure scanning begins at the start
+	parseErrors_.clear();
 
 	// First figure out what the executable name is. If there is any path prepended
 	// to it strip that off.
 	executableName_=argv[0];
-	size_t lastSlashPosition=executableName_.find_last_of('/');
+	size_t lastSlashPosition=executableName_.find_last_of("/\\");
 	if( lastSlashPosition!=std::string::npos ) executableName_=executableName_.substr( lastSlashPosition+1, std::string::npos );
 
-	// First need to turn the vector allowedOptions_ into something that getopt_long
-	// can understand.
-	struct option longOptions[allowedOptions_.size()+1];
-	for( size_t index=0; index<allowedOptions_.size(); ++index )
+	// Start looping over the rest of argv, checking to see if any of them are options
+	bool ignoreFurtherOptions=false; // so the user can use '--' to specify everything following are not options
+	for( int optionIndex=1; optionIndex<argc; ++optionIndex )
 	{
-		longOptions[index].name=allowedOptions_[index].first.c_str();
-		longOptions[index].has_arg=allowedOptions_[index].second;
-		longOptions[index].flag=0;
-		longOptions[index].val=0;
-	}
-	// getopt_long instructions say the last entry has to be all zeros
-	longOptions[allowedOptions_.size()].name=0;
-	longOptions[allowedOptions_.size()].has_arg=0;
-	longOptions[allowedOptions_.size()].flag=0;
-	longOptions[allowedOptions_.size()].val=0;
+		std::string argument( argv[optionIndex] );
 
-	int getoptReturn;
-
-	// Record all unregistered options encountered, then create the error *at the end*.
-	// This is so that nonOptionArguments_ has the chance to be set, because this could
-	// be called from ModuleCommandLineParser which doesn't care about unregistered options
-	// after the command name.
-	do
-	{
-		int optionIndex;
-		int currentInd=optind;
-		getoptReturn=getopt_long( argc, argv, "", longOptions, &optionIndex );
-
-		if( getoptReturn==0 )
+		if( argument=="--" && !ignoreFurtherOptions ) ignoreFurtherOptions=true;
+		else if( argument.substr(0,2)=="--" && !ignoreFurtherOptions ) // See if the first two characters are '--'
 		{
-			// Creating this reference will put a new entry in the map, so
-			// there will be a record that an option has been specified even
-			// if I don't add an argument into the vector.
-			std::vector<std::string>& optionArguments=parsedOptions_[longOptions[optionIndex].name];
-			if( optarg ) optionArguments.push_back( optarg );
+			std::string option=argument.substr(2); // remove leading '--'
+			std::string value;
+			size_t equalsPosition=option.find('='); // see if the value is part of the option (i.e. "option=value")
+			if( equalsPosition!=std::string::npos )
+			{
+				value=option.substr(equalsPosition+1);
+				option=option.substr(0,equalsPosition);
+			}
+			// See if the option specified was registered
+			const auto matchingOption=std::find_if( allowedOptions_.begin(), allowedOptions_.end(), [&option](std::pair<std::string,ArgumentType>& element){return element.first==option;});
+			if( matchingOption==allowedOptions_.end() ) parseErrors_.emplace_back( CommandLineParser::error::unknown_option, argument );
+			else
+			{
+				// Creating this reference will put a new entry in the map, so
+				// there will be a record that an option has been specified even
+				// if I don't add an argument into the vector.
+				std::vector<std::string>& optionArguments=parsedOptions_[matchingOption->first];
+				if( matchingOption->second==NoArgument && !value.empty() ) parseErrors_.emplace_back( CommandLineParser::error::unexepected_option_value, argument );
+				else if( matchingOption->second==OptionalArgument && !value.empty() ) optionArguments.push_back( value );
+				else if( matchingOption->second==RequiredArgument )
+				{
+					if( !value.empty() ) optionArguments.push_back( value ); // Value was specified in the same argument with "option=value"
+					else if( optionIndex+1<argc ) // Next argument must be the value, make sure there are anough arguments
+					{
+						std::string nextArgument( argv[optionIndex+1] );
+						// Values cannot start with "--". To specify a value with "--" you must use the "option=--value" syntax
+						if( nextArgument.substr(0,2)=="--" ) parseErrors_.emplace_back( CommandLineParser::error::option_as_value, argument+" "+nextArgument );
+						else
+						{
+							optionArguments.push_back( nextArgument );
+							++optionIndex; // Skip parsing the value on the next loop
+						}
+					}
+					else parseErrors_.emplace_back( CommandLineParser::error::missing_option_value, argument );
+				}
+			}
 		}
-		else if( getoptReturn=='?' ) unknownOptions_.push_back(argv[currentInd]);
-		else if( getoptReturn!=-1 ) { error=CommandLineParser::error::parse_error; return; }
+		else nonOptionArguments_.push_back( argument );
+	}
 
-	} while( getoptReturn!=-1 );
-
-	// Now that all of the options have been parsed, make a note of any other command line
-	// arguments.
-	while( optind<argc ) nonOptionArguments_.push_back( argv[optind++] );
-
-	// If options were specified that weren't registered, throw an exception.
-	if( !unknownOptions_.empty() ) error=CommandLineParser::error::unknown_option;
+	if( !parseErrors_.empty() ) error=parseErrors_.front().first;
 	else error=CommandLineParser::error::ok;
 }
 
