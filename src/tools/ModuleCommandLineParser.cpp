@@ -27,7 +27,7 @@ void tools::ModuleCommandLineParser::parse( const int argc, char* argv[] )
 	{
 		commandName_=parser_.nonOptionArguments().front();
 
-		size_t commandNameIndex=1;
+		int commandNameIndex=1;
 		for( ; commandNameIndex<argc; ++commandNameIndex )
 		{
 			if( argv[commandNameIndex]==commandName_ ) break;
